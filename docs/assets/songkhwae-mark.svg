@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none">
+  <title>ตราสมุดภาคสนามเมืองสองแคว</title>
+  <rect x="2" y="2" width="92" height="92" rx="28" fill="#164c3d"/>
+  <rect x="7" y="7" width="82" height="82" rx="23" stroke="#f5ce78" stroke-width="2"/>
+  <circle cx="69" cy="27" r="9" fill="#f4ca69"/>
+  <path d="M13 69c13-8 19-7 29-4 12 4 18 5 40-1v9c-20 7-30 5-43 1-7-2-15-1-24 3z" fill="#92cfc0"/>
+  <path d="M16 79c8-3 15-4 23-1 15 5 23 4 40-1" stroke="#f5d282" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M42 17c2 9 6 12 12 15H30c6-3 10-6 12-15z" fill="#f6d483"/>
+  <path d="M42 29c4 9 11 13 21 16H21c10-3 17-7 21-16z" fill="#f3a45f"/>
+  <path d="M42 39c6 9 15 13 25 15H17c11-2 19-6 25-15z" fill="#f7d58a"/>
+  <path d="M25 55h34v8H25z" fill="#fff1c9"/>
+  <path d="M38 63v-5c0-2 2-4 4-5 2 1 4 3 4 5v5z" fill="#164c3d"/>
+  <path d="M71 51v9m-4-4h8" stroke="#f4ca69" stroke-width="1.8" stroke-linecap="round"/>
+</svg>
