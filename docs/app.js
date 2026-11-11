@@ -26,8 +26,10 @@ const e=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt
 const rand=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),n=>n.toString(16).padStart(2,'0')).join('');
 const root=document.getElementById('app'),topbar=document.getElementById('top-actions');
 const workspaceBanner=document.getElementById('workspace-banner'),routeTitle=document.getElementById('route-title');
-const config=window.TWO_KHWAE_CONFIG?.appsScriptUrl?.trim()||'';
+const configuredUrl=window.TWO_KHWAE_CONFIG?.appsScriptUrl;
+const config=typeof configuredUrl==='string'?configuredUrl.trim():'';
 const usable=/^https:\/\/script\.google\.com\/(?:a\/macros\/[^/]+\/s|macros\/s)\/[A-Za-z0-9_-]+\/exec$/.test(config);
+const localPreview=window.location?.protocol==='file:';
 let user=null,token='',demo=false,view='home',status={},teacherData={},toast='',busy=false,transport=null,navSerial=0;
 let motionPaused=false;
 let recordTab='Survey';
@@ -53,12 +55,16 @@ function bridge(){
   };
   window.addEventListener('message',handler);
   frame=document.createElement('iframe');frame.title='ช่องเชื่อม Google Sheets';frame.src=config+'?n='+nonce;
-  timer=setTimeout(()=>{clear();rejectReady(Error('เชื่อมต่อ Apps Script ไม่สำเร็จ ตรวจ URL /exec, PAGES_ORIGIN และสิทธิ์ Anyone'));},18000);
+  timer=setTimeout(()=>{clear();rejectReady(Error('เชื่อมต่อ Apps Script ไม่สำเร็จ ให้ครูตรวจลิงก์ /exec, สิทธิ์ Anyone และ PAGES_ORIGIN'));},18000);
   document.getElementById('bridge-host').append(frame);
   transport=async(action,payload={})=>{const requestToken=token;await ready;return new Promise((res,rej)=>{
-    const request=rand();pending.set(request,{res,rej,timer:setTimeout(()=>{pending.delete(request);rej(Error('ยังไม่ได้รับการยืนยัน กรุณากดส่งอีกครั้งโดยใช้ข้อมูลเดิม'));},50000)});
-    source.postMessage({channel:'TWK_BRIDGE_V1',nonce,type:'request',request,action,token:requestToken,payload},origin);
+    const request=rand(),message=action==='login'?'เชื่อมต่อ Apps Script แล้ว แต่ยังไม่ได้ผลตรวจรหัส กรุณาลองเข้าสู่ระบบอีกครั้ง':action==='save'?'ยังไม่ได้รับการยืนยัน กรุณากดส่งอีกครั้งโดยใช้ข้อมูลเดิม':'Google ยังไม่ส่งข้อมูลกลับมา กรุณาลองโหลดใหม่';
+    const timer=setTimeout(()=>{pending.delete(request);rej(Error(message));},action==='login'?22000:50000);
+    pending.set(request,{res,rej,timer});
+    try{source.postMessage({channel:'TWK_BRIDGE_V1',nonce,type:'request',request,action,token:requestToken,payload},origin);}
+    catch{pending.delete(request);clearTimeout(timer);rej(Error('ส่งคำขอไป Apps Script ไม่สำเร็จ กรุณารีเฟรชแล้วลองอีกครั้ง'));}
   });};
+  transport.ready=ready;
   return transport;
 }
 function demoCall(a,d){
@@ -81,6 +87,11 @@ function demoCall(a,d){
   return {};
 }
 async function api(a,d){if(demo)return demoCall(a,d);if(!usable)throw Error('ยังไม่ได้ใส่ URL Apps Script ใน config.js');return bridge()(a,d);}
+function loginBridge(){
+  if(localPreview)throw Error('หน้านี้เปิดจากไฟล์ในเครื่อง ให้เปิดลิงก์ GitHub Pages เพื่อเข้าสู่ระบบจริง');
+  if(!usable)throw Error('ยังไม่ได้ตั้งค่า URL /exec ใน docs/config.js ให้ใช้ไฟล์ config.js เดิมของเว็บ');
+  return bridge();
+}
 function btn(label,attr='',alt=false){return '<button class="btn'+(alt?' alt':'')+'" '+(attr.includes('type=')?'':'type="button" ')+attr+'>'+e(label)+'</button>';}
 function options(a){return a.map(x=>'<option value="'+e(x[0])+'">'+e(x[1])+'</option>').join('');}
 function input(name,label,opt={}){
@@ -94,7 +105,7 @@ function section(name,body){return '<fieldset class="section"><legend>'+e(name)+
 function feedback(el,msg,t='error'){const p=el.querySelector('.feedback');if(p){p.textContent=msg;p.dataset.tone=t;}}
 function header(title,desc){return '<div class="heading"><h2>'+e(title)+'</h2><p class="muted">'+e(desc)+'</p></div>';}
 function landing(){
-  workspaceBanner.hidden=true;
+  if(workspaceBanner)workspaceBanner.hidden=true;
   document.body.classList.remove('workspace-open');
   topbar.innerHTML='<span class="pill">สังคมศึกษา · ม.1</span>';
   root.innerHTML=`<div class="wrap landing">
@@ -119,6 +130,7 @@ function landing(){
         <label class="label">รหัสบัญชี<input name="id" autocomplete="username" placeholder="เช่น SQ001" maxlength="24" required></label>
         <label class="label">รหัสผ่าน<input type="password" name="password" autocomplete="current-password" required maxlength="100"></label>
         ${btn('เข้าสู่ระบบ','type="submit"')}
+        ${usable&&!localPreview?'<button class="btn alt small" type="button" data-check-connection>ตรวจการเชื่อมต่อ</button>':''}
         <p class="feedback" role="status" aria-live="polite"></p>
       </form>
       <div class="intro-note">
@@ -128,15 +140,28 @@ function landing(){
     </section>
   </div>`;
   const loginForm=root.querySelector('#login');
-  if(usable)loginForm.addEventListener('focusin',()=>bridge(),{once:true});
+  if(usable&&!localPreview)loginForm.addEventListener('focusin',()=>bridge(),{once:true});
+  loginForm.querySelector('[data-check-connection]')?.addEventListener('click',async ev=>{
+    if(busy)return;
+    const b=ev.currentTarget;b.disabled=true;busy=true;
+    feedback(loginForm,'กำลังตรวจการเชื่อมต่อ Apps Script…','ok');
+    try{await loginBridge().ready;feedback(loginForm,'เชื่อมต่อ Apps Script ได้แล้ว ลองกดเข้าสู่ระบบเพื่อตรวจรหัส','ok');}
+    catch(err){feedback(loginForm,err.message);}
+    finally{b.disabled=false;busy=false;}
+  });
   loginForm.addEventListener('submit',async ev=>{
     ev.preventDefault();if(busy)return;
-    const form=ev.currentTarget,fd=new FormData(form),b=form.querySelector('button');busy=true;b.disabled=true;feedback(form,'กำลังเข้าสู่ระบบ…','ok');
-    let overview;
-    try{const result=await api('login',{id:fd.get('id'),password:fd.get('password'),includeHome:true});token=result.token;user=result.user;overview=result.home;}
+    const form=ev.currentTarget,fd=new FormData(form),b=form.querySelector('[type=submit]');busy=true;b.disabled=true;feedback(form,'กำลังเชื่อมต่อ Apps Script…','ok');
+    try{
+      const send=loginBridge();await send.ready;
+      feedback(form,'เชื่อมต่อแล้ว กำลังตรวจรหัสบัญชี…','ok');
+      const result=await send('login',{id:fd.get('id'),password:fd.get('password')});
+      if(!result?.token||!result.user)throw Error('Apps Script ตอบกลับไม่ครบ กรุณาลองอีกครั้ง');
+      token=result.token;user=result.user;
+    }
     catch(err){feedback(form,err.message);b.disabled=false;return;}
     finally{busy=false;}
-    await go('home',overview);
+    await go('home');
   });
 }
 const menusStudent=[['home','ภาพรวม'],['pre','ก่อนเรียน'],['Fieldwork','บันทึกกลุ่ม'],['Evidence','ส่งหลักฐาน'],['Reflection','สะท้อนรายบุคคล'],['post','หลังเรียน']];
@@ -152,7 +177,7 @@ async function go(next,initialData){
       const scope=next==='home'||next==='controls'?next:teacher?'roster':'survey';
       let data=initialData;
       if(!data){
-        render('<p class="muted" role="status">กำลังโหลด…</p>',true);
+        render('<p class="muted" role="status">'+(next==='home'?'เข้าสู่ระบบแล้ว กำลังโหลดภาพรวม…':'กำลังโหลด…')+'</p>',true);
         data=await api(teacher?'teacher':'status',{view:scope});
       }
       if(req!==navSerial||!user)return;
@@ -164,12 +189,12 @@ async function go(next,initialData){
 }
 function render(body,loading=false){
   const menus=user.role==='teacher'?menusTeacher:menusStudent;
-  if(workspaceBanner.hidden){
+  if(workspaceBanner?.hidden){
     workspaceBanner.hidden=false;
     document.body.classList.add('workspace-open');
   }
-  workspaceBanner.dataset.scene=routeScenes[view]||'temple';
-  routeTitle.textContent=menus.find(([k])=>k===view)?.[1]||'สมุดภาคสนาม';
+  if(workspaceBanner)workspaceBanner.dataset.scene=routeScenes[view]||'temple';
+  if(routeTitle)routeTitle.textContent=menus.find(([k])=>k===view)?.[1]||'สมุดภาคสนาม';
   topbar.innerHTML=(demo?'<span class="pill demo">โหมดทดลอง</span>':'')+'<span class="pill">'+e(user.id)+(user.group?' · '+e(user.group):'')+'</span>'+btn('ออกจากระบบ','data-logout="1"',true);
   root.innerHTML='<div class="wrap workspace"><aside class="card side"><div class="tagline">'+e(user.place||'เครื่องมือของครู')+'</div><nav class="nav" aria-label="เมนูสมุดภาคสนาม">'+menus.map(([k,l])=>'<button type="button" data-view="'+k+'"'+(k===view?' aria-current="page"':'')+'>'+e(l)+'</button>').join('')+'</nav></aside><section class="card" id="panel">'+(demo?'<div class="notice">โหมดทดลอง · ข้อมูลสมมติจะหายเมื่อปิดหรือโหลดหน้าใหม่ ไม่บันทึกลงชีตจริง</div>':'')+(!loading&&toast?'<p class="toast" role="status">'+e(toast)+'</p>':'')+body+'</section></div>';
   if(!loading)toast='';
