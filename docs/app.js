@@ -1,8 +1,15 @@
 'use strict';
 const places=['วัดใหญ่','พระราชวังจันทน์','วัดจุฬามณี','ตลาดใต้'];
+const fieldMaps={
+  'วัดใหญ่':{file:'wat-yai',examples:'วิหารพระพุทธชินราช · พระปรางค์ประธาน · บริเวณริมแม่น้ำน่าน'},
+  'พระราชวังจันทน์':{file:'chan-palace',examples:'แนวฐานพระราชวังจันทน์ · ศาลสมเด็จพระนเรศวรมหาราช · ศูนย์ประวัติศาสตร์พระราชวังจันทน์'},
+  'วัดจุฬามณี':{file:'wat-chulamani',examples:'บริเวณวัด · เขตโบราณสถาน · ชุมชนวัดจุฬามณี'},
+  'ตลาดใต้':{file:'talat-tai',examples:'ตลาดเทศบาล 1 · ย่านร้านค้าตลาดใต้ · แนวริมแม่น้ำน่าน'}
+};
 const domains=['รับผิดชอบดูแลพื้นที่','มีส่วนร่วมเสนอความคิดเห็น','เห็นคุณค่าชุมชนและเข้าใจประวัติศาสตร์','เคารพความหลากหลาย'];
 const phases={pre:'ก่อนเรียน',post:'หลังเรียน'};
 const titles={Survey:'แบบวัดก่อน–หลัง',Fieldwork:'บันทึกกลุ่ม',Reflection:'สะท้อนรายบุคคล',Observation:'สังเกตพฤติกรรม',Rubric:'ประเมินผลงานกลุ่ม',InterviewBefore:'สัมภาษณ์ก่อนกิจกรรม',InterviewAfter:'สัมภาษณ์หลังเรียน',Evidence:'หลักฐาน'};
+const recordLabels={requestId:'เลขรายการ',savedAt:'เวลาที่บันทึก',student:'รหัสนักเรียน',author:'ผู้ส่ง',teacher:'รหัสครู',group:'กลุ่ม',place:'สถานที่',phase:'ช่วงเก็บข้อมูล',version:'รุ่นแบบวัด',D1:'คะแนนด้าน 1',D2:'คะแนนด้าน 2',D3:'คะแนนด้าน 3',D4:'คะแนนด้าน 4',total:'คะแนนรวม',missingReason:'เหตุผลที่ข้อมูลไม่ครบ',visitDate:'วันที่ลงพื้นที่',area:'ขอบเขตสำรวจ',teacherMeeting:'การนัดหมายครู',teacherGuidance:'ข้อเสนอแนะของครู',question:'คำถามของกลุ่ม',why:'เหตุผลที่เลือก',source1:'หลักฐานชิ้นที่ 1',source2:'หลักฐานชิ้นที่ 2',point1:'จุดสำรวจที่ 1',point2:'จุดสำรวจที่ 2',point3:'จุดสำรวจที่ 3',map:'แผนที่',mapSource:'แหล่งแผนที่',finding:'ข้อค้นพบ',evidence:'หลักฐานประกอบ',uncertain:'สิ่งที่ยังไม่แน่ใจ',feedback:'ข้อคิดเห็น',revision:'สิ่งที่ปรับ',roles:'บทบาทสมาชิก',myWork:'งานที่ทำ',participation:'การมีส่วนร่วม',help:'ความช่วยเหลือ',date:'วันที่',observer:'ผู้สังเกต',spot:'จุดศึกษา',start:'เวลาเริ่ม',end:'เวลาสิ้นสุด',stage:'ช่วงกิจกรรม',opportunity:'โอกาสที่จัดให้',event:'เหตุการณ์ที่สังเกต',notObserved:'เหตุผลที่ไม่ได้ประเมิน',guidance:'แนวทางช่วยเหลือ',assessor:'ผู้ประเมิน',edition:'ฉบับผลงาน',geoHistory:'ภูมิศาสตร์และประวัติศาสตร์',community:'สื่อสารคุณค่าและมุมมองชุมชน',action:'การนำไปใช้และสะท้อนผล',reason:'เหตุผลและหลักฐาน',participant:'รหัสผู้ให้ข้อมูล',participantRole:'บทบาทผู้ให้ข้อมูล',method:'วิธีบันทึก',filename:'ชื่อหลักฐาน',mime:'ประเภทไฟล์',bytes:'ขนาด (ไบต์)',source:'ที่มา',permission:'ขอบเขตการใช้'};
 const states={pending:'ยังไม่ยืนยัน',granted:'ยินยอม',declined:'ไม่ยินยอม',withdrawn:'ถอนความยินยอม'};
 const observe=['ทำหน้าที่ที่รับผิดชอบตามข้อตกลง','ดูแลพื้นที่ วัสดุ หรือข้อมูลตามกติกาที่กำหนด','เสนอความคิดเห็นหรือคำถามผ่านช่องทางที่จัดให้','ร่วมพิจารณาทางเลือกหรือตัดสินใจโดยให้เหตุผล','อธิบายคุณค่าของสถานที่โดยยกหลักฐานที่เกี่ยวข้อง','เชื่อมเรื่องราวในอดีตกับพื้นที่หรือวิถีชีวิตโดยอ้างหลักฐาน','รับฟังมุมมองต่างและโต้ตอบโดยไม่เหมารวม','เคารพการยินยอมหรือปฏิเสธและเงื่อนไขการใช้ข้อมูล'];
 const rubric=['การเชื่อมโยงภูมิศาสตร์และประวัติศาสตร์','การใช้หลักฐานและการให้เหตุผล','การสื่อสารคุณค่าและมุมมองชุมชน','การนำข้อค้นพบไปใช้และสะท้อนผล'];
@@ -18,9 +25,12 @@ const prompts=['ทำเลริมแม่น้ำ ผังวัด แ�
 const e=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const rand=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),n=>n.toString(16).padStart(2,'0')).join('');
 const root=document.getElementById('app'),topbar=document.getElementById('top-actions');
+const workspaceBanner=document.getElementById('workspace-banner'),routeTitle=document.getElementById('route-title');
 const config=window.TWO_KHWAE_CONFIG?.appsScriptUrl?.trim()||'';
 const usable=/^https:\/\/script\.google\.com\/(?:a\/macros\/[^/]+\/s|macros\/s)\/[A-Za-z0-9_-]+\/exec$/.test(config);
 let user=null,token='',demo=false,view='home',status={},teacherData={},toast='',busy=false,transport=null,navSerial=0;
+let motionPaused=false;
+let recordTab='Survey';
 let demoRows={},demoFlags={pre:true,post:true},demoConsents={};
 const gid=i=>i<=25?Math.ceil(i/5):i<=29?6:i<=34?7:8;
 const pOf=g=>places[Math.floor((Number(g.slice(1))-1)/2)]||'';
@@ -63,7 +73,11 @@ function demoCall(a,d){
     demoRows[d.type]??=[];if(!demoRows[d.type].some(r=>r.id===d.requestId))demoRows[d.type].push({id:d.requestId,owner:user.id,fields:{...d.fields,fileBase64:undefined}});
     return {id:d.requestId};
   }
-  if(a==='rows'){const r=demoRows[d.tab]||[];return {headers:['รหัสรายการ','ผู้กรอก','ข้อมูลทดลอง'],rows:r.slice(d.offset,d.offset+30).map(x=>[x.id,x.owner,JSON.stringify(x.fields)]),total:r.length,offset:d.offset};}
+  if(a==='rows'){
+    const r=demoRows[d.tab]||[],page=r.slice(d.offset,d.offset+30);
+    const headers=['requestId','author',...new Set(page.flatMap(x=>Object.keys(x.fields).filter(k=>k!=='fileBase64')))];
+    return {headers,rows:page.map(x=>headers.map(k=>k==='requestId'?x.id:k==='author'?x.owner:k==='answers'?x.fields[k]?.map(v=>v??'—').join(', '):x.fields[k]??'')),total:r.length,offset:d.offset};
+  }
   return {};
 }
 async function api(a,d){if(demo)return demoCall(a,d);if(!usable)throw Error('ยังไม่ได้ใส่ URL Apps Script ใน config.js');return bridge()(a,d);}
@@ -80,8 +94,39 @@ function section(name,body){return '<fieldset class="section"><legend>'+e(name)+
 function feedback(el,msg,t='error'){const p=el.querySelector('.feedback');if(p){p.textContent=msg;p.dataset.tone=t;}}
 function header(title,desc){return '<div class="heading"><h2>'+e(title)+'</h2><p class="muted">'+e(desc)+'</p></div>';}
 function landing(){
+  workspaceBanner.hidden=true;
+  document.body.classList.remove('workspace-open');
   topbar.innerHTML='<span class="pill">สังคมศึกษา · ม.1</span>';
-  root.innerHTML='<div class="wrap landing"><section class="hero"><svg class="terrain" viewBox="0 0 500 500" fill="none" aria-hidden="true"><path d="M380-20c-132 55-98 110-199 146C86 161 203 247 109 291 10 337 117 451-15 519" stroke="#a6ca97" stroke-width="53"/><path d="M380-20c-132 55-98 110-199 146C86 161 203 247 109 291 10 337 117 451-15 519" stroke="#dceca5" stroke-width="1" stroke-dasharray="5 7"/><g stroke="#e9efcf" stroke-width="1" opacity=".55"><path d="M7 90 430 255M11 190 440 348M10 280 460 448M205 18 25 439M325 29 142 462M420 52 260 499"/></g><g fill="#e4efa8"><circle cx="215" cy="138" r="9"/><circle cx="229" cy="241" r="9"/><circle cx="96" cy="318" r="9"/><circle cx="154" cy="410" r="9"/></g></svg><div class="hero-text"><div class="eyebrow">พื้นที่เรียนรู้ · พิษณุโลก</div><h1>ออกสำรวจ<br>เมืองสองแคว</h1><p>ตั้งคำถามจากสถานที่จริง เก็บหลักฐาน แล้วเล่าเรื่องความสัมพันธ์ของพื้นที่ เวลา และผู้คน</p><div class="kicker"><span class="pill dark">39 คน</span><span class="pill dark">8 กลุ่ม</span><span class="pill dark">6 ชั่วโมง</span></div></div><div class="trail">'+places.map((p,i)=>'<div class="place"><b>0'+(i+1)+'</b>'+e(p)+'</div>').join('')+'</div></section><section class="card login-card">'+header('เข้าสมุดภาคสนาม','ใช้รหัสบัญชีและรหัสผ่านที่ครูแจกให้')+'<form id="login" class="stack"><label class="label">รหัสบัญชี<input name="id" autocomplete="username" placeholder="เช่น SQ001" maxlength="24" required></label><label class="label">รหัสผ่าน<input type="password" name="password" autocomplete="current-password" required maxlength="100"></label>'+btn('เข้าสู่ระบบ','type="submit"')+'<p class="feedback" role="status" aria-live="polite"></p></form><div class="intro-note"><p class="small muted">'+(usable?'ทดลองดูหน้าจอก่อนกรอกข้อมูลจริงได้':'ยังไม่ได้ตั้งค่า Apps Script · ทดลองใช้หน้าจอได้โดยไม่เขียนลงชีต')+'</p><div class="row">'+btn('ทดลองแบบนักเรียน','data-demo="student"',true)+btn('ทดลองแบบครู','data-demo="teacher"',true)+'</div></div></section></div>';
+  root.innerHTML=`<div class="wrap landing">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-art" aria-hidden="true"></div>
+      <button class="motion-toggle" type="button" data-motion aria-pressed="${motionPaused}">พักภาพเคลื่อนไหว</button>
+      <div class="hero-text">
+        <div class="eyebrow">สมุดสำรวจท้องถิ่น · พิษณุโลก</div>
+        <h1 id="hero-title">ออกสำรวจ<br><span>เมืองสองแคว</span></h1>
+        <p>ตามรอยเมืองเก่า เก็บหลักฐาน และเล่าเรื่องของสถานที่ เวลา และผู้คน</p>
+        <div class="kicker"><span class="pill dark">39 คน</span><span class="pill dark">8 กลุ่ม</span><span class="pill dark">6 ชั่วโมง</span></div>
+      </div>
+      <div class="trail">
+        <span class="trail-label">เส้นทางสำรวจ 4 แห่ง</span>
+        <div class="trail-grid">${places.map((p,i)=>'<div class="place"><b>0'+(i+1)+'</b>'+e(p)+'</div>').join('')}</div>
+      </div>
+    </section>
+    <section class="card login-card">
+      <div class="login-stamp"><img src="./assets/songkhwae-mark.svg" alt="" width="39" height="39"> ห้องเรียนภาคสนาม</div>
+      ${header('เข้าสมุดภาคสนาม','ใช้รหัสบัญชีและรหัสผ่านที่ครูแจกให้')}
+      <form id="login" class="stack">
+        <label class="label">รหัสบัญชี<input name="id" autocomplete="username" placeholder="เช่น SQ001" maxlength="24" required></label>
+        <label class="label">รหัสผ่าน<input type="password" name="password" autocomplete="current-password" required maxlength="100"></label>
+        ${btn('เข้าสู่ระบบ','type="submit"')}
+        <p class="feedback" role="status" aria-live="polite"></p>
+      </form>
+      <div class="intro-note">
+        <p class="small muted">${usable?'ทดลองดูหน้าจอก่อนกรอกข้อมูลจริงได้':'ยังไม่ได้ตั้งค่า Apps Script · ทดลองใช้หน้าจอได้โดยไม่เขียนลงชีต'}</p>
+        <div class="row">${btn('ทดลองแบบนักเรียน','data-demo="student"',true)}${btn('ทดลองแบบครู','data-demo="teacher"',true)}</div>
+      </div>
+    </section>
+  </div>`;
   const loginForm=root.querySelector('#login');
   if(usable)loginForm.addEventListener('focusin',()=>bridge(),{once:true});
   loginForm.addEventListener('submit',async ev=>{
@@ -98,6 +143,7 @@ const menusStudent=[['home','ภาพรวม'],['pre','ก่อนเรี�
 const menusTeacher=[['home','ภาพรวมครู'],['Observation','สังเกตพฤติกรรม'],['Rubric','ประเมินกลุ่ม'],['Evidence','ส่งหลักฐาน'],['InterviewBefore','สัมภาษณ์ก่อน'],['InterviewAfter','สัมภาษณ์หลัง'],['records','ดูข้อมูล'],['controls','ตั้งค่าการเก็บ']];
 const studentDataViews=new Set(['home','pre','post']);
 const teacherDataViews=new Set(['home','Observation','InterviewAfter','controls']);
+const routeScenes={home:'temple',pre:'temple',post:'river',Fieldwork:'market',Evidence:'river',Reflection:'river',Observation:'market',Rubric:'temple',InterviewBefore:'market',InterviewAfter:'market',records:'river',controls:'temple'};
 async function go(next,initialData){
   if(busy||!user)return;
   const req=++navSerial,teacher=user.role==='teacher';view=next;
@@ -117,8 +163,15 @@ async function go(next,initialData){
   }catch(err){if(req===navSerial&&user)render('<p class="notice" role="alert">'+e(err.message)+'</p>'+btn('ลองโหลดใหม่','data-view="'+e(next)+'"',true));}
 }
 function render(body,loading=false){
+  const menus=user.role==='teacher'?menusTeacher:menusStudent;
+  if(workspaceBanner.hidden){
+    workspaceBanner.hidden=false;
+    document.body.classList.add('workspace-open');
+  }
+  workspaceBanner.dataset.scene=routeScenes[view]||'temple';
+  routeTitle.textContent=menus.find(([k])=>k===view)?.[1]||'สมุดภาคสนาม';
   topbar.innerHTML=(demo?'<span class="pill demo">โหมดทดลอง</span>':'')+'<span class="pill">'+e(user.id)+(user.group?' · '+e(user.group):'')+'</span>'+btn('ออกจากระบบ','data-logout="1"',true);
-  root.innerHTML='<div class="wrap workspace"><aside class="card side"><div class="tagline">'+e(user.place||'เครื่องมือของครู')+'</div><nav class="nav" aria-label="เมนูสมุดภาคสนาม">'+(user.role==='teacher'?menusTeacher:menusStudent).map(([k,l])=>'<button type="button" data-view="'+k+'"'+(k===view?' aria-current="page"':'')+'>'+e(l)+'</button>').join('')+'</nav></aside><section class="card" id="panel">'+(demo?'<div class="notice">โหมดทดลอง · ข้อมูลสมมติจะหายเมื่อปิดหรือโหลดหน้าใหม่ ไม่บันทึกลงชีตจริง</div>':'')+(!loading&&toast?'<p class="toast" role="status">'+e(toast)+'</p>':'')+body+'</section></div>';
+  root.innerHTML='<div class="wrap workspace"><aside class="card side"><div class="tagline">'+e(user.place||'เครื่องมือของครู')+'</div><nav class="nav" aria-label="เมนูสมุดภาคสนาม">'+menus.map(([k,l])=>'<button type="button" data-view="'+k+'"'+(k===view?' aria-current="page"':'')+'>'+e(l)+'</button>').join('')+'</nav></aside><section class="card" id="panel">'+(demo?'<div class="notice">โหมดทดลอง · ข้อมูลสมมติจะหายเมื่อปิดหรือโหลดหน้าใหม่ ไม่บันทึกลงชีตจริง</div>':'')+(!loading&&toast?'<p class="toast" role="status">'+e(toast)+'</p>':'')+body+'</section></div>';
   if(!loading)toast='';
 }
 const fmt=x=>x==null?'—':Number(x).toFixed(2);
@@ -144,11 +197,29 @@ function survey(phase){
   if(status[phase])return header(title,'บันทึกช่วงนี้แล้ว ข้อมูลถูกจับคู่ด้วยรหัสนักเรียนเดิม');
   if(status.consent!=='granted')return header(title,'ยังไม่ได้ยืนยันความยินยอมกับครู คุณยังทำกิจกรรมและส่งงานส่วนอื่นได้');
   if(!status.flags?.[phase])return header(title,'ครูยังไม่เปิดแบบวัดช่วงนี้');
-  const v=[[5,'5 · เห็นด้วยอย่างยิ่ง'],[4,'4 · เห็นด้วย'],[3,'3 · ปานกลาง'],[2,'2 · ไม่เห็นด้วย'],[1,'1 · ไม่เห็นด้วยอย่างยิ่ง']];
+  const v=[[1,'1 · ไม่เห็นด้วยอย่างยิ่ง'],[2,'2 · ไม่เห็นด้วย'],[3,'3 · ปานกลาง'],[4,'4 · เห็นด้วย'],[5,'5 · เห็นด้วยอย่างยิ่ง']];
   return header(title,'เลือกตามความคิดเห็นของตนเอง ข้ามข้อได้ คำตอบส่วนวิจัยไม่กระทบคะแนนเรียน')+form('Survey',domains.map((d,i)=>section(d,rating(SURVEY_ITEMS.slice(i*6,i*6+6),v,'ข้ามข้อนี้',i*6))).join('')+optional('missingReason','หมายเหตุข้อมูลขาด'));
 }
 function groupInput(){return input('group','กลุ่ม',{choices:[['','เลือกกลุ่ม'],...Array.from({length:8},(_,i)=>['G'+(i+1),'กลุ่ม '+(i+1)+' · '+places[Math.floor(i/2)]])]});}
 function studentInput(){return input('student','รหัสนักเรียน',{choices:[['','เลือกนักเรียนที่ยืนยันแล้ว'],...(teacherData.roster||[]).filter(u=>u.consent==='granted').map(u=>[u.id,u.id+' · '+u.group])]});}
+function fieldMap(group){
+  const place=pOf(group),map=fieldMaps[place];
+  if(!map)return '';
+  const path='./assets/maps/'+map.file;
+  return `<figure class="field-map">
+    <a class="field-map-link" href="${path}.webp" target="_blank" rel="noopener">
+      <img src="${path}-preview.webp" width="720" height="480" loading="lazy" decoding="async" alt="แผนที่ภาพวาดบริเวณ${e(place)}">
+      <span>เปิดแผนที่ขนาดเต็มในแท็บใหม่ ↗</span>
+    </a>
+    <figcaption class="field-map-note">
+      <span class="pill">แผนที่ประกอบกิจกรรม</span>
+      <h3>${e(place)}</h3>
+      <p>ใช้ภาพช่วยวางแผนเลือกจุดสำรวจ 3 จุด แล้วบันทึกชื่อจุด สิ่งที่พบ และช่วงเวลาที่เกี่ยวข้องในช่องด้านล่าง ถ้าจุดบนภาพมีหมายเลข ให้ระบุหมายเลขคู่กับชื่อจุดได้</p>
+      <p class="small"><strong>ตัวอย่างจุดสังเกต:</strong> ${e(map.examples)}</p>
+      <p class="small muted">ภาพวาดอ้างอิงพื้นที่จริง ตำแหน่งและสัดส่วนเป็นค่าประมาณ</p>
+    </figcaption>
+  </figure>`;
+}
 function panel(){
   if(view==='home')return home();
   if(phases[view])return survey(view);
@@ -156,29 +227,90 @@ function panel(){
     section('ข้อมูลการสำรวจ','<div class="grid">'+input('visitDate','วันที่ลงพื้นที่',{type:'date'})+input('area','ขอบเขตหรือช่วงถนนที่สำรวจ')+input('teacherMeeting','นัดพบครู / เวลาพบจริง',{optional:true})+input('teacherGuidance','จุดสังเกตหรือคำชี้แนะของครู',{optional:true})+'</div>')+
     section('1. คำถามและเหตุผล','<div class="grid">'+area('question','กลุ่มเราอยากรู้เรื่องอะไร')+area('why','เหตุผลที่เลือกคำถาม')+'</div>')+
     section('2. หลักฐานจากต่างแหล่ง','<div class="grid">'+area('source1','หลักฐานชิ้นที่ 1','ระบุชื่อ/ไฟล์ ผู้สร้างหรือแหล่ง เวลาเหตุการณ์ วันที่เก็บ และสิ่งที่พบ')+area('source2','หลักฐานชิ้นที่ 2','ใช้ต่างแหล่ง ระบุข้อมูลเช่นเดียวกับชิ้นแรก')+'</div>')+
-    section('3. จุดสำรวจและแผนที่','<div class="grid">'+[1,2,3].map(i=>area('point'+i,'จุดสำรวจที่ '+i,'ระบุจุด สิ่งที่พบ และช่วงเวลาที่เกี่ยวข้อง')).join('')+input('map','ชื่อไฟล์หรือลิงก์แผนที่',{optional:true})+input('mapSource','แหล่งแผนที่ ปีข้อมูล ทิศและสัญลักษณ์',{optional:true})+'</div>')+
+    section('3. จุดสำรวจและแผนที่',fieldMap(user.group)+'<div class="grid">'+[1,2,3].map(i=>area('point'+i,'จุดสำรวจที่ '+i,'ระบุชื่อจุด สิ่งที่พบ และช่วงเวลาที่เกี่ยวข้อง')).join('')+input('map','ชื่อไฟล์หรือลิงก์แผนที่',{optional:true})+input('mapSource','แหล่งแผนที่ ปีข้อมูล ทิศและสัญลักษณ์',{optional:true})+'</div>')+
     section('4. ข้อค้นพบ','<div class="grid">'+area('finding','ข้อค้นพบ 2–4 ประโยค')+area('evidence','หลักฐานที่สนับสนุนหรือขัดแย้ง')+optional('uncertain','เรื่องที่ยังสรุปไม่ได้และสิ่งที่ควรตรวจต่อ')+'</div>')+
     section('5. ทดลองใช้และปรับงาน','<div class="grid">'+area('feedback','ความคิดเห็นจากผู้รับสาร')+area('revision','สิ่งที่กลุ่มปรับและเหตุผล')+area('roles','บทบาทสมาชิก','ระบุรหัสสมาชิก หน้าที่ ตำแหน่งหลักฐาน และความช่วยเหลือ')+'</div>'));
   if(view==='Reflection')return header('สะท้อนการเรียนรู้รายบุคคล','ตอบตามสิ่งที่เกิดขึ้นจริง รวมถึงสิ่งที่ยังไม่แน่ใจหรือยังไม่มีโอกาสทำ')+form(view,'<div class="grid">'+area('myWork','1. วันนี้นักเรียนทำอะไรด้วยตนเอง มีหลักฐานใดแสดงงานของนักเรียน')+area('evidence','2. หลักฐานใดทำให้นักเรียนเข้าใจสถานที่นี้ และเรื่องใดยังสรุปไม่ได้')+area('participation','3. นักเรียนได้เสนอความคิดเห็น รับฟัง หรือร่วมตัดสินใจอย่างไร ถ้ายังไม่มีโอกาสให้บอกตามจริง')+optional('help','ชื่อไฟล์ จุดหลักฐาน หรือความช่วยเหลือที่ได้รับ')+'</div>');
-  if(view==='Observation')return header('สังเกตพฤติกรรมพลเมือง','บันทึกพฤติกรรมรายบุคคลที่เห็นจริง แยกคะแนน 0 จากยังไม่ประเมิน')+form(view,'<div class="grid line">'+studentInput()+input('observer','ผู้สังเกต')+input('date','วันที่',{type:'date'})+input('spot','สถานที่และจุดศึกษา')+input('start','เวลาเริ่ม',{type:'time'})+input('end','เวลาสิ้นสุด',{type:'time'})+input('stage','ช่วงกิจกรรม',{choices:['เตรียมงาน','สำรวจภาคสนาม','อภิปราย','นำเสนอ/ทดลองใช้'].map(v=>[v,v])})+input('opportunity','งานและโอกาสที่จัดให้')+'</div>'+section('รายการสังเกต 8 ข้อ',rating(observe,[[3,'3 · ทำเองและมีเหตุผล'],[2,'2 · ทำเองตามโอกาส'],[1,'1 · ทำเมื่อชวน/เตือน'],[0,'0 · มีโอกาสแต่ไม่พบ']],'ยังไม่ประเมิน'))+'<div class="grid">'+area('event','เหตุการณ์หรือคำพูดที่เห็นจริง')+optional('notObserved','เหตุผลของข้อที่ยังไม่ประเมิน')+optional('guidance','คำชี้แนะและการตอบสนอง')+'</div>');
-  if(view==='Rubric')return header('ประเมินแผนที่เรื่องเล่าของกลุ่ม','ให้ 1–4 ตามเกณฑ์ หากหลักฐานยังไม่พอให้รอประเมิน')+form(view,'<div class="grid line">'+groupInput()+input('assessor','ผู้ประเมิน')+input('edition','ฉบับผลงาน')+'</div>'+rubric.map((r,i)=>section(r,'<div class="details"><details><summary>ดูคำอธิบายระดับคะแนน</summary><ol reversed>'+rubricLevels[i].map(s=>'<li>'+e(s)+'</li>').join('')+'</ol></details></div>'+rating([r],[[4,'4'],[3,'3'],[2,'2'],[1,'1']],'รอประเมิน',i))).join('')+area('reason','เหตุผลและตำแหน่งหลักฐาน'));
+  if(view==='Observation')return header('สังเกตพฤติกรรมพลเมือง','บันทึกพฤติกรรมรายบุคคลที่เห็นจริง แยกคะแนน 0 จากยังไม่ประเมิน')+form(view,'<div class="grid line">'+studentInput()+input('observer','ผู้สังเกต')+input('date','วันที่',{type:'date'})+input('spot','สถานที่และจุดศึกษา')+input('start','เวลาเริ่ม',{type:'time'})+input('end','เวลาสิ้นสุด',{type:'time'})+input('stage','ช่วงกิจกรรม',{choices:['เตรียมงาน','สำรวจภาคสนาม','อภิปราย','นำเสนอ/ทดลองใช้'].map(v=>[v,v])})+input('opportunity','งานและโอกาสที่จัดให้')+'</div>'+section('รายการสังเกต 8 ข้อ',rating(observe,[[0,'0 · มีโอกาสแต่ไม่พบ'],[1,'1 · ทำเมื่อชวน/เตือน'],[2,'2 · ทำเองตามโอกาส'],[3,'3 · ทำเองและมีเหตุผล']],'ยังไม่ประเมิน'))+'<div class="grid">'+area('event','เหตุการณ์หรือคำพูดที่เห็นจริง')+optional('notObserved','เหตุผลของข้อที่ยังไม่ประเมิน')+optional('guidance','คำชี้แนะและการตอบสนอง')+'</div>');
+  if(view==='Rubric')return header('ประเมินแผนที่เรื่องเล่าของกลุ่ม','ให้ 1–4 ตามเกณฑ์ หากหลักฐานยังไม่พอให้รอประเมิน')+form(view,'<div class="grid line">'+groupInput()+input('assessor','ผู้ประเมิน')+input('edition','ฉบับผลงาน')+'</div>'+rubric.map((r,i)=>section(r,'<div class="details"><details><summary>ดูคำอธิบายระดับคะแนน</summary><ol>'+rubricLevels[i].slice().reverse().map(s=>'<li>'+e(s)+'</li>').join('')+'</ol></details></div>'+rating([r],[[1,'1'],[2,'2'],[3,'3'],[4,'4']],'รอประเมิน',i))).join('')+area('reason','เหตุผลและตำแหน่งหลักฐาน'));
   if(view==='InterviewBefore'||view==='InterviewAfter'){
     const before=view==='InterviewBefore',qs=before?interviewBefore:interviewAfter;
     return header(titles[view],'จดคำตอบตามจริงและระบุที่มาของหลักฐานเมื่อมี')+form(view,'<div class="grid line">'+(before?input('participant','รหัสผู้ให้ข้อมูล')+input('participantRole','บทบาทผู้ให้ข้อมูล'):studentInput())+input('date','วันที่',{type:'date'})+input('method','วิธีบันทึก',{choices:[['จด','จด'],['เสียง','เสียง']]})+'</div><label class="scope"><input type="checkbox" name="consent" required> ยืนยันว่าได้รับความยินยอมตามขอบเขตการบันทึก</label><div class="grid">'+qs.map((q,i)=>optional('q'+(i+1),(i+1)+'. '+q)).join('')+'</div>');
   }
   if(view==='Evidence')return header('แนบหลักฐานการเรียนรู้','รองรับภาพ เสียง วิดีโอ และ PDF ไม่เกิน 6 MB ต่อรายการ ไฟล์ใหญ่ให้ใช้ลิงก์ Drive ที่ครูมีสิทธิ์เปิด')+form(view,'<div class="grid">'+(user.role==='teacher'?groupInput():'')+input('filename','ชื่อหลักฐาน',{max:100})+input('date','วันที่เก็บ',{type:'date'})+input('source','ที่มาของหลักฐาน')+input('permission','ขอบเขตที่อนุญาตให้ใช้')+input('file','เลือกไฟล์',{type:'file',optional:true,wide:true})+input('url','หรือลิงก์ Google Drive / Docs',{type:'url',max:700,optional:true,wide:true})+'</div>');
-  if(view==='records')return header('ดูข้อมูลที่บันทึก','ดูแต่ละประเภททีละ 30 รายการ หรือเปิดชีตเพื่ออ่านทั้งหมด')+'<div class="grid">'+input('table','ประเภทข้อมูล',{choices:Object.keys(titles).map(k=>[k,titles[k]])})+'</div><div id="records" aria-live="polite"></div>';
+  if(view==='records')return header('ดูข้อมูลที่บันทึก','เลือกแท็บที่ต้องการ แล้วเปิดดูรายละเอียดหรือหลักฐานของแต่ละรายการ')+
+    '<nav class="record-tabs" aria-label="แท็บข้อมูล">'+Object.entries(titles).map(([k,l])=>'<button class="btn alt" type="button" data-record-tab="'+e(k)+'" aria-pressed="'+(k===recordTab)+'">'+e(l)+'</button>').join('')+'</nav><div id="records" aria-live="polite"></div>';
   if(view==='controls')return header('ตั้งค่าการเก็บข้อมูล','เปิดช่วงเก็บก่อนหรือหลังตามกิจกรรม และยืนยันเฉพาะรายการที่ตรวจสอบความยินยอมจริง')+
     '<form id="flags" class="line"><label class="scope"><input type="checkbox" name="pre"'+(teacherData.flags?.pre?' checked':'')+'> เปิดแบบวัดก่อนเรียน</label><label class="scope"><input type="checkbox" name="post"'+(teacherData.flags?.post?' checked':'')+'> เปิดแบบวัดหลังเรียน</label>'+btn('บันทึกช่วงเก็บ','type="submit"')+'<p class="feedback" role="status"></p></form>'+
     '<h3>สถานะความยินยอมรายคน</h3><div class="stack">'+(teacherData.roster||[]).map(u=>'<form class="consent" data-account="'+e(u.id)+'"><div class="roster-row"><strong>'+e(u.id)+' · '+e(u.group)+' · '+e(u.place)+'</strong><label class="label">สถานะ<select name="state">'+Object.entries(states).map(([k,l])=>'<option value="'+k+'"'+(k===u.consent?' selected':'')+'>'+l+'</option>').join('')+'</select></label>'+btn('ยืนยัน','type="submit"',true)+'</div><p class="feedback" role="status"></p></form>').join('')+'</div>';
   return '';
 }
+function googleLink(raw){
+  try{
+    const url=new URL(String(raw??''));
+    return url.protocol==='https:'&&['drive.google.com','docs.google.com'].includes(url.hostname)&&!url.username&&!url.password&&!url.port?url:null;
+  }catch{return null;}
+}
+function drivePreview(raw){
+  const url=googleLink(raw);if(!url||url.hostname!=='drive.google.com')return '';
+  const id=url.pathname.match(/^\/file\/d\/([A-Za-z0-9_-]+)(?:\/(?:view|preview|edit))?\/?$/)?.[1]||(url.pathname==='/open'?url.searchParams.get('id'):'');
+  if(!id||!/^[A-Za-z0-9_-]+$/.test(id))return '';
+  const preview=new URL('https://drive.google.com/file/d/'+id+'/preview');
+  const key=url.searchParams.get('resourcekey');if(key&&/^[A-Za-z0-9_-]+$/.test(key))preview.searchParams.set('resourcekey',key);
+  return preview.href;
+}
+function openLink(label,raw){
+  const url=googleLink(raw);
+  return url?'<a class="btn alt small" href="'+e(url.href)+'" target="_blank" rel="noopener noreferrer">'+e(label)+' ↗</a>':'';
+}
+function recordLabel(key){
+  const n=key.match(/^[Qq](\d+)$/);if(n)return 'ข้อ '+Number(n[1]);
+  const o=key.match(/^O(\d+)$/);if(o)return 'รายการสังเกต '+Number(o[1]);
+  return recordLabels[key]||key;
+}
+const recordDateFormat=new Intl.DateTimeFormat('th-TH',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Bangkok'});
+function recordValue(key,val){
+  if(key==='phase')return phases[val]||val;
+  if(key==='savedAt'&&val){const d=new Date(val);if(!Number.isNaN(d.valueOf()))return recordDateFormat.format(d);}
+  return val===null||val===undefined||val===''?'—':val;
+}
+function recordFields(headers,row,skip=[]){
+  return '<dl class="record-fields">'+headers.map((k,i)=>skip.includes(k)?'':'<div><dt>'+e(recordLabel(k))+'</dt><dd>'+e(recordValue(k,row[i]))+'</dd></div>').join('')+'</dl>';
+}
+function evidenceCard(headers,row,v){
+  const filename=v.filename||'หลักฐาน',mime=String(v.mime||''),kind=mime.startsWith('image/')?'ภาพ':mime.startsWith('audio/')?'เสียง':mime.startsWith('video/')?'วิดีโอ':mime==='application/pdf'?'PDF':'ไฟล์หรือลิงก์';
+  const link=openLink('เปิดใน Drive',v.url),preview=drivePreview(v.url);
+  return '<article class="record-card evidence-card"><div class="row"><h3>'+e(filename)+'</h3><span class="pill">'+e(kind)+'</span></div><p class="record-meta">'+e([v.author,v.group,v.place,v.date].filter(Boolean).join(' · '))+'</p>'+
+    '<div class="row">'+(preview?'<button type="button" class="btn small" data-preview="'+e(preview)+'" aria-expanded="false">ดูตัวอย่าง</button>':'')+(link||'<span class="small muted">ไม่มีลิงก์ Drive ที่เปิดได้</span>')+'</div>'+
+    (preview?'<div class="drive-preview" hidden></div>':'')+
+    '<details class="record-details"><summary>รายละเอียดหลักฐาน</summary>'+recordFields(headers,row,['filename','url'])+'</details></article>';
+}
+function recordCard(tab,headers,row){
+  const v=Object.fromEntries(headers.map((k,i)=>[k,row[i]]));
+  if(tab==='Evidence')return evidenceCard(headers,row,v);
+  const label=[v.student||v.author||v.participant||v.teacher,v.group,phases[v.phase],v.place].filter(Boolean).join(' · ')||'รายการ '+String(v.requestId||'').slice(0,8);
+  const date=v.savedAt?recordValue('savedAt',v.savedAt):v.date||v.visitDate||'';
+  return '<details class="record-card record-details"><summary><strong>'+e(label)+'</strong>'+(date?'<span class="record-meta">'+e(date)+'</span>':'')+'</summary>'+recordFields(headers,row)+'</details>';
+}
 async function showRows(offset=0){
-  const host=document.getElementById('records'),sel=root.querySelector('[name=table]');if(!host||!sel)return;
-  const tab=sel.value,serial=++navSerial;host.textContent='กำลังโหลด…';
-  try{const r=await api('rows',{tab,offset});if(serial!==navSerial||!host.isConnected)return;
-    host.innerHTML=(r.rows.length?table(r.headers,r.rows):'<p class="caption">ยังไม่มีข้อมูล</p>')+'<div class="row"><p class="caption">ทั้งหมด '+e(r.total)+' รายการ</p>'+(r.offset>0?btn('ก่อนหน้า','data-page="'+Math.max(0,r.offset-30)+'"',true):'')+(r.offset+r.rows.length<r.total?btn('ถัดไป','data-page="'+(r.offset+r.rows.length)+'"',true):'')+'</div>';
-  }catch(err){if(host.isConnected)host.textContent=err.message;}
+  const host=document.getElementById('records');if(!host||user?.role!=='teacher')return;
+  const tab=recordTab,serial=++navSerial;host.textContent='กำลังโหลด…';
+  root.querySelectorAll('[data-record-tab]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.recordTab===tab)));
+  try{
+    const r=await api('rows',{tab,offset});if(serial!==navSerial||!host.isConnected)return;
+    host.innerHTML='<div class="records-toolbar row"><strong>'+e(titles[tab])+' · '+e(r.total)+' รายการ</strong>'+openLink('เปิดแท็บใน Google Sheet',r.sheetUrl||teacherData.url)+(tab==='Evidence'?openLink('เปิดโฟลเดอร์หลักฐาน',r.folderUrl):'')+'</div>'+
+      (r.rows.length?'<div class="record-list">'+r.rows.map(row=>recordCard(tab,r.headers,row)).join('')+'</div>':'<p class="notice">ยังไม่มีข้อมูลในแท็บนี้</p>')+
+      '<div class="row records-pages">'+(r.offset>0?btn('ก่อนหน้า','data-page="'+Math.max(0,r.offset-30)+'"',true):'')+(r.rows.length?'<span class="caption">รายการ '+e(r.offset+1)+'–'+e(r.offset+r.rows.length)+' จาก '+e(r.total)+'</span>':'')+(r.offset+r.rows.length<r.total?btn('ถัดไป','data-page="'+(r.offset+r.rows.length)+'"',true):'')+'</div>';
+  }catch(err){if(serial===navSerial&&host.isConnected)host.textContent=err.message;}
+}
+function toggleDrivePreview(button){
+  const card=button.closest('.evidence-card'),host=card?.querySelector('.drive-preview'),src=drivePreview(button.dataset.preview);
+  if(!host||!src)return;
+  if(!host.hidden){host.replaceChildren();host.hidden=true;button.setAttribute('aria-expanded','false');button.textContent='ดูตัวอย่าง';return;}
+  const previous=root.querySelector('[data-preview][aria-expanded="true"]');if(previous&&previous!==button)toggleDrivePreview(previous);
+  const hint=document.createElement('p');hint.className='small muted';hint.textContent='ถ้าตัวอย่างไม่ขึ้น ให้กด เปิดใน Drive ด้านบน และใช้บัญชี Google ที่มีสิทธิ์เข้าถึง';
+  const frame=document.createElement('iframe');frame.src=src;frame.title='ตัวอย่างไฟล์หลักฐานจาก Google Drive';frame.allowFullscreen=true;frame.referrerPolicy='no-referrer';frame.setAttribute('sandbox','allow-scripts allow-same-origin');
+  host.replaceChildren(hint,frame);host.hidden=false;button.setAttribute('aria-expanded','true');button.textContent='ปิดตัวอย่าง';
 }
 const readFile=file=>new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=()=>reject(Error('อ่านไฟล์ไม่สำเร็จ'));r.readAsDataURL(file);});
 async function saveForm(formEl){
@@ -199,13 +331,21 @@ async function saveForm(formEl){
   return 'บันทึกแล้ว · เลขรายการ '+r.id.slice(0,8).toUpperCase()+(demo?' (ทดลอง)':'');
 }
 document.addEventListener('click',async ev=>{
-  const b=ev.target.closest('button');if(!b||busy)return;
+  const b=ev.target.closest('button');if(!b)return;
+  if(b.dataset.motion!==undefined){
+    motionPaused=!motionPaused;
+    document.body.classList.toggle('motion-paused',motionPaused);
+    document.querySelectorAll('[data-motion]').forEach(button=>button.setAttribute('aria-pressed',String(motionPaused)));
+    return;
+  }
+  if(busy)return;
   if(b.dataset.demo){demo=true;const t=b.dataset.demo==='teacher';user={id:t?'TEACHER':'SQ001',role:t?'teacher':'student',group:t?'':'G1',place:t?'':'วัดใหญ่'};await go('home');}
   if(b.dataset.view)await go(b.dataset.view);
+  if(b.dataset.recordTab&&Object.prototype.hasOwnProperty.call(titles,b.dataset.recordTab)){recordTab=b.dataset.recordTab;await showRows();}
   if(b.dataset.page!==undefined)await showRows(Number(b.dataset.page));
-  if(b.dataset.logout){if(!demo)api('logout').catch(()=>{});++navSerial;user=null;token='';demo=false;landing();}
+  if(b.dataset.preview)toggleDrivePreview(b);
+  if(b.dataset.logout){if(!demo)api('logout').catch(()=>{});++navSerial;user=null;token='';demo=false;recordTab='Survey';teacherData={};landing();}
 });
-root.addEventListener('change',ev=>{if(ev.target.name==='table')showRows();});
 root.addEventListener('submit',async ev=>{
   const f=ev.target;if(f.id==='login')return;ev.preventDefault();if(busy)return;
   busy=true;const b=f.querySelector('button[type=submit]');if(b)b.disabled=true;feedback(f,'กำลังบันทึก…','ok');
