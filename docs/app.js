@@ -32,7 +32,7 @@ const usable=/^https:\/\/script\.google\.com\/(?:a\/macros\/[^/]+\/s|macros\/s)\
 const localPreview=window.location?.protocol==='file:';
 let user=null,token='',demo=false,view='home',status={},teacherData={},toast='',busy=false,transport=null,navSerial=0;
 let motionPaused=false;
-let recordTab='Survey';
+let recordTab='Survey',recordMode='summary',recordPhase='pre',recordResult=null;
 let demoRows={},demoFlags={pre:true,post:true},demoConsents={};
 const gid=i=>i<=25?Math.ceil(i/5):i<=29?6:i<=34?7:8;
 const pOf=g=>places[Math.floor((Number(g.slice(1))-1)/2)]||'';
@@ -67,6 +67,68 @@ function bridge(){
   transport.ready=ready;
   return transport;
 }
+// BEGIN RECORD SUMMARY: shared with the local demo.
+const summaryKeys_=(prefix,n)=>Array.from({length:n},(_,i)=>prefix+(prefix==='Q'?String(i+1).padStart(2,'0'):i+1));
+const summarySpecs_={
+  Survey:{categories:['group','place'],ratings:summaryKeys_('Q',24),min:1,max:5,text:['missingReason']},
+  Fieldwork:{categories:['group','place'],text:['visitDate','area','teacherMeeting','teacherGuidance','question','why','source1','source2','point1','point2','point3','map','mapSource','finding','evidence','uncertain','feedback','revision','roles']},
+  Reflection:{categories:['group','place'],text:['myWork','evidence','participation','help']},
+  Observation:{categories:['stage','group','place'],ratings:summaryKeys_('O',8),min:0,max:3,text:['date','spot','start','end','opportunity','event','notObserved','guidance']},
+  Rubric:{categories:['group','place'],ratings:['geoHistory','evidence','community','action'],min:1,max:4,text:['edition','reason']},
+  InterviewBefore:{categories:['method'],text:['date','participantRole',...summaryKeys_('q',5)]},
+  InterviewAfter:{categories:['method','group','place'],text:['date',...summaryKeys_('q',4)]},
+  Evidence:{categories:['mime','group','place'],text:[]}
+};
+const summarySampleLimit_=5;
+function summaryString_(v){
+  return v instanceof Date?(Number.isNaN(v.valueOf())?'':v.toISOString()):String(v==null?'':v).trim();
+}
+function evidenceKind_(mime){
+  mime=summaryString_(mime).toLowerCase();
+  return mime.startsWith('image/')?'ภาพ':mime.startsWith('audio/')?'เสียง':mime.startsWith('video/')?'วิดีโอ':mime==='application/pdf'?'PDF':'ไฟล์หรือลิงก์อื่น';
+}
+function summarizeRecords_(tab,headers,rows){
+  const spec=summarySpecs_[tab],index=Object.fromEntries(headers.map((k,i)=>[k,i]));
+  const categoryKeys=spec.categories,ratingKeys=spec.ratings||[],textKeys=spec.text;
+  const empty=()=>({total:0,categories:categoryKeys.map(key=>({key,counts:new Map()})),
+    ratings:ratingKeys.map(key=>({key,min:spec.min,counts:Array(spec.max-spec.min+1).fill(0)})),
+    text:textKeys.map(key=>({key,count:0,samples:[]}))});
+  const all=empty(),phases=tab==='Survey'?{pre:empty(),post:empty(),other:empty()}:null,recent=[];
+  let total=0;
+  for(let i=rows.length-1;i>=0;i--){
+    const row=rows[i],value=key=>row[index[key]];
+    if(!row.some(v=>summaryString_(v)!==''))continue;
+    total++;
+    const phase=value('phase'),bucket=phases?(phase==='pre'?phases.pre:phase==='post'?phases.post:phases.other):all;
+    bucket.total++;
+    for(const c of bucket.categories){
+      const label=c.key==='mime'?evidenceKind_(value('mime')):summaryString_(value(c.key));
+      if(label)c.counts.set(label,(c.counts.get(label)||0)+1);
+    }
+    for(const r of bucket.ratings){
+      const raw=summaryString_(value(r.key)),score=Number(raw);
+      if(raw!==''&&Number.isInteger(score)&&score>=spec.min&&score<=spec.max)r.counts[score-spec.min]++;
+    }
+    for(const t of bucket.text){
+      const answer=summaryString_(value(t.key));
+      if(!answer)continue;
+      t.count++;
+      if(t.samples.length<summarySampleLimit_)t.samples.push(answer.length>320?Array.from(answer.slice(0,322)).slice(0,320).join('')+'…':answer);
+    }
+    if(tab==='Evidence'&&recent.length<summarySampleLimit_)recent.push(row);
+  }
+  const finish=bucket=>({total:bucket.total,ratings:bucket.ratings,text:bucket.text,
+    categories:bucket.categories.map(({key,counts})=>{
+      const ordered=Array.from(counts,([label,count])=>({label,count})).sort((a,b)=>b.count-a.count||a.label.localeCompare(b.label,'th'));
+      const items=ordered.slice(0,8),n=ordered.reduce((sum,item)=>sum+item.count,0);
+      if(ordered.length>8)items.push({label:'หมวดอื่น ๆ รวมกัน',count:ordered.slice(8).reduce((sum,item)=>sum+item.count,0)});
+      return {key,items,n};
+    })});
+  const groups=phases?Object.fromEntries(Object.entries(phases).filter(([key,b])=>key!=='other'||b.total).map(([key,b])=>[key,finish(b)])):{all:finish(all)};
+  return {total,groups,recent};
+}
+// END RECORD SUMMARY
+
 function demoCall(a,d){
   if(a==='status'){
     const mine=(demoRows.Survey||[]).filter(r=>r.owner===user.id);
@@ -76,13 +138,27 @@ function demoCall(a,d){
   if(a==='settings'){demoFlags={pre:d.pre,post:d.post};return demoFlags;}
   if(a==='consent'){demoConsents[d.id]=d.state;return {state:d.state};}
   if(a==='save'){
-    demoRows[d.type]??=[];if(!demoRows[d.type].some(r=>r.id===d.requestId))demoRows[d.type].push({id:d.requestId,owner:user.id,fields:{...d.fields,fileBase64:undefined}});
+    demoRows[d.type]??=[];
+    if(!demoRows[d.type].some(r=>r.id===d.requestId)){
+      const fields={...d.fields},member=rosterDemo().find(r=>r.id===fields.student);
+      fields.group=user.group||member?.group||fields.group;
+      fields.place=user.place||member?.place||pOf(fields.group||'');
+      delete fields.fileBase64;
+      for(const [i,key] of (summarySpecs_[d.type]?.ratings||[]).entries())fields[key]=fields.answers?.[i]??'';
+      delete fields.answers;
+      demoRows[d.type].push({id:d.requestId,owner:user.id,fields});
+    }
     return {id:d.requestId};
   }
   if(a==='rows'){
-    const r=demoRows[d.tab]||[],page=r.slice(d.offset,d.offset+30);
-    const headers=['requestId','author',...new Set(page.flatMap(x=>Object.keys(x.fields).filter(k=>k!=='fileBase64')))];
-    return {headers,rows:page.map(x=>headers.map(k=>k==='requestId'?x.id:k==='author'?x.owner:k==='answers'?x.fields[k]?.map(v=>v??'—').join(', '):x.fields[k]??'')),total:r.length,offset:d.offset};
+    const r=demoRows[d.tab]||[],offset=d.offset||0,page=d.mode==='summary'?r:r.slice(offset,offset+30);
+    const headers=['requestId','author',...new Set(page.flatMap(x=>Object.keys(x.fields)))];
+    const rows=page.map(x=>headers.map(k=>k==='requestId'?x.id:k==='author'?x.owner:x.fields[k]??''));
+    if(d.mode==='summary'){
+      const {total,groups,recent}=summarizeRecords_(d.tab,headers,rows);
+      return {headers,total,summary:groups,rows:recent,sampleLimit:summarySampleLimit_};
+    }
+    return {headers,rows,total:r.length,offset};
   }
   return {};
 }
@@ -263,8 +339,9 @@ function panel(){
     return header(titles[view],'จดคำตอบตามจริงและระบุที่มาของหลักฐานเมื่อมี')+form(view,'<div class="grid line">'+(before?input('participant','รหัสผู้ให้ข้อมูล')+input('participantRole','บทบาทผู้ให้ข้อมูล'):studentInput())+input('date','วันที่',{type:'date'})+input('method','วิธีบันทึก',{choices:[['จด','จด'],['เสียง','เสียง']]})+'</div><label class="scope"><input type="checkbox" name="consent" required> ยืนยันว่าได้รับความยินยอมตามขอบเขตการบันทึก</label><div class="grid">'+qs.map((q,i)=>optional('q'+(i+1),(i+1)+'. '+q)).join('')+'</div>');
   }
   if(view==='Evidence')return header('แนบหลักฐานการเรียนรู้','รองรับภาพ เสียง วิดีโอ และ PDF ไม่เกิน 6 MB ต่อรายการ ไฟล์ใหญ่ให้ใช้ลิงก์ Drive ที่ครูมีสิทธิ์เปิด')+form(view,'<div class="grid">'+(user.role==='teacher'?groupInput():'')+input('filename','ชื่อหลักฐาน',{max:100})+input('date','วันที่เก็บ',{type:'date'})+input('source','ที่มาของหลักฐาน')+input('permission','ขอบเขตที่อนุญาตให้ใช้')+input('file','เลือกไฟล์',{type:'file',optional:true,wide:true})+input('url','หรือลิงก์ Google Drive / Docs',{type:'url',max:700,optional:true,wide:true})+'</div>');
-  if(view==='records')return header('ดูข้อมูลที่บันทึก','เลือกแท็บที่ต้องการ แล้วเปิดดูรายละเอียดหรือหลักฐานของแต่ละรายการ')+
-    '<nav class="record-tabs" aria-label="แท็บข้อมูล">'+Object.entries(titles).map(([k,l])=>'<button class="btn alt" type="button" data-record-tab="'+e(k)+'" aria-pressed="'+(k===recordTab)+'">'+e(l)+'</button>').join('')+'</nav><div id="records" aria-live="polite"></div>';
+  if(view==='records')return header('ดูข้อมูลที่บันทึก','เลือกกิจกรรมเพื่อดูสรุปผล หรือสลับไปอ่านคำตอบทีละรายการ')+
+    '<nav class="record-tabs" aria-label="แท็บข้อมูล">'+Object.entries(titles).map(([k,l])=>'<button class="btn alt" type="button" data-record-tab="'+e(k)+'" aria-pressed="'+(k===recordTab)+'">'+e(l)+'</button>').join('')+'</nav>'+
+    '<div class="row record-modes" role="group" aria-label="รูปแบบการดูข้อมูล">'+Object.entries({summary:'สรุปผล',individual:'คำตอบรายรายการ'}).map(([k,l])=>'<button type="button" class="btn alt" data-record-mode="'+k+'" aria-pressed="'+(k===recordMode)+'">'+l+'</button>').join('')+'</div><p class="small muted" id="records-status" role="status"></p><div id="records"></div>';
   if(view==='controls')return header('ตั้งค่าการเก็บข้อมูล','เปิดช่วงเก็บก่อนหรือหลังตามกิจกรรม และยืนยันเฉพาะรายการที่ตรวจสอบความยินยอมจริง')+
     '<form id="flags" class="line"><label class="scope"><input type="checkbox" name="pre"'+(teacherData.flags?.pre?' checked':'')+'> เปิดแบบวัดก่อนเรียน</label><label class="scope"><input type="checkbox" name="post"'+(teacherData.flags?.post?' checked':'')+'> เปิดแบบวัดหลังเรียน</label>'+btn('บันทึกช่วงเก็บ','type="submit"')+'<p class="feedback" role="status"></p></form>'+
     '<h3>สถานะความยินยอมรายคน</h3><div class="stack">'+(teacherData.roster||[]).map(u=>'<form class="consent" data-account="'+e(u.id)+'"><div class="roster-row"><strong>'+e(u.id)+' · '+e(u.group)+' · '+e(u.place)+'</strong><label class="label">สถานะ<select name="state">'+Object.entries(states).map(([k,l])=>'<option value="'+k+'"'+(k===u.consent?' selected':'')+'>'+l+'</option>').join('')+'</select></label>'+btn('ยืนยัน','type="submit"',true)+'</div><p class="feedback" role="status"></p></form>').join('')+'</div>';
@@ -319,16 +396,77 @@ function recordCard(tab,headers,row){
   const date=v.savedAt?recordValue('savedAt',v.savedAt):v.date||v.visitDate||'';
   return '<details class="record-card record-details"><summary><strong>'+e(label)+'</strong>'+(date?'<span class="record-meta">'+e(date)+'</span>':'')+'</summary>'+recordFields(headers,row)+'</details>';
 }
+const summaryNumber=new Intl.NumberFormat('th-TH',{maximumFractionDigits:1});
+const sn=n=>summaryNumber.format(n);
+function summaryQuestion(tab,key){
+  const n=Number(key.slice(1));
+  if(tab==='Survey'&&/^Q\d+$/.test(key))return n+'. '+SURVEY_ITEMS[n-1];
+  if(tab==='Observation'&&/^O\d+$/.test(key))return n+'. '+observe[n-1];
+  if(tab==='Rubric'&&summarySpecs_.Rubric.ratings.includes(key))return rubric[summarySpecs_.Rubric.ratings.indexOf(key)];
+  if(tab.startsWith('Interview')&&/^q\d+$/.test(key))return n+'. '+(tab==='InterviewBefore'?interviewBefore:interviewAfter)[n-1];
+  if(tab==='Reflection')return {myWork:'วันนี้ทำอะไรด้วยตนเอง และมีหลักฐานอะไร',evidence:'หลักฐานใดช่วยให้เข้าใจสถานที่ และเรื่องใดยังสรุปไม่ได้',participation:'เสนอความคิดเห็น รับฟัง หรือร่วมตัดสินใจอย่างไร',help:'ชื่อไฟล์ จุดหลักฐาน หรือความช่วยเหลือที่ได้รับ'}[key];
+  return recordLabel(key);
+}
+function summaryBars(items,n){
+  return '<ul class="summary-bars">'+items.map(({label,count})=>{
+    const fraction=n?100*count/n:0;
+    return '<li><span class="summary-bar-label">'+e(label)+'</span><span class="summary-bar-track" aria-hidden="true"><span style="width:'+fraction+'%"></span></span><span class="summary-bar-value">'+sn(count)+' <span>('+sn(fraction)+'%)</span></span></li>';
+  }).join('')+'</ul>';
+}
+function summarySection(title,html){
+  return '<section class="summary-section"><h3>'+e(title)+'</h3><div class="summary-grid">'+html+'</div></section>';
+}
+function summaryCard(title,meta,body){
+  return '<article class="summary-card"><h4>'+e(title)+'</h4><p class="small muted">'+e(meta)+'</p>'+body+'</article>';
+}
+function summaryBody(tab,r){
+  const bucket=r.summary[tab==='Survey'?recordPhase:'all'];
+  if(!bucket?.total)return '<p class="notice">ยังไม่มีข้อมูลในช่วงนี้</p>';
+  const absent='ยังไม่มีคำตอบ';
+  const categories=bucket.categories.filter(c=>c.n).map(c=>summaryCard(c.key==='mime'?'ประเภทหลักฐาน':recordLabel(c.key),'ระบุ '+sn(c.n)+' จาก '+sn(bucket.total)+' รายการ',summaryBars(c.items,c.n))).join('');
+  const scores=bucket.ratings.map(q=>{
+    const n=q.counts.reduce((sum,count)=>sum+count,0);
+    return summaryCard(summaryQuestion(tab,q.key),sn(n)+' จาก '+sn(bucket.total)+' รายการมีคะแนน',n?summaryBars(q.counts.map((count,i)=>({label:q.min+i,count})),n):'');
+  }).join('');
+  const responses=bucket.text.map(q=>{
+    const more=q.count>q.samples.length;
+    const note=q.count?sn(q.count)+' คำตอบ'+(more?' · แสดง '+sn(q.samples.length)+' ล่าสุด':''):absent;
+    return summaryCard(summaryQuestion(tab,q.key),note,q.samples.length?'<ul class="summary-answers">'+q.samples.map(answer=>'<li>'+e(answer)+'</li>').join('')+'</ul>':'');
+  }).join('');
+  return (categories?summarySection('ภาพรวม',categories):'')+
+    (scores?summarySection('คะแนนรายข้อ',scores):'')+
+    (responses?summarySection('คำตอบแยกตามคำถาม',responses):'')+
+    (tab==='Evidence'&&r.rows.length?'<section class="summary-section"><h3>หลักฐานล่าสุด '+sn(r.rows.length)+' รายการ</h3><div class="record-list">'+r.rows.map(row=>recordCard(tab,r.headers,row)).join('')+'</div></section>':'');
+}
+function summaryView(tab,r){
+  if(!r.total)return '<p class="notice">ยังไม่มีข้อมูลในแท็บนี้</p>';
+  let controls='';
+  if(tab==='Survey'){
+    if(!Object.hasOwn(r.summary,recordPhase))recordPhase='pre';
+    controls='<div class="row summary-phases" role="group" aria-label="ช่วงแบบวัด">'+Object.entries(r.summary).map(([key,phase])=>'<button type="button" class="btn alt" data-record-phase="'+key+'" aria-pressed="'+(key===recordPhase)+'">'+e(phases[key]||'ไม่ระบุช่วง')+' · '+sn(phase.total)+'</button>').join('')+'</div>';
+  }
+  const note=tab==='Survey'?'กราฟแยกตามช่วงและคิดเปอร์เซ็นต์จากจำนวนที่ตอบข้อนั้น หากต้องการเทียบเฉพาะคู่ข้อมูลครบ ให้ดูที่ภาพรวมครู':
+    tab==='Evidence'?'ดูจำนวนหลักฐานตามประเภท กลุ่ม และสถานที่ หรือเปิดไฟล์จากรายการด้านล่าง':
+    'กราฟคิดเปอร์เซ็นต์จากรายการที่ระบุคำตอบของข้อนั้น ข้อความยาวแสดงบางส่วน เปิดคำตอบรายรายการเพื่ออ่านทั้งหมด';
+  return controls+'<p class="small muted">'+e(note)+'</p><div id="record-summary-body">'+summaryBody(tab,r)+'</div>';
+}
 async function showRows(offset=0){
-  const host=document.getElementById('records');if(!host||user?.role!=='teacher')return;
-  const tab=recordTab,serial=++navSerial;host.textContent='กำลังโหลด…';
+  const host=document.getElementById('records'),notice=document.getElementById('records-status');if(!host||!notice||user?.role!=='teacher')return;
+  const tab=recordTab,mode=recordMode,serial=++navSerial;recordResult=null;host.replaceChildren();notice.textContent='กำลังโหลด…';host.setAttribute('aria-busy','true');
   root.querySelectorAll('[data-record-tab]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.recordTab===tab)));
+  root.querySelectorAll('[data-record-mode]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.recordMode===mode)));
   try{
-    const r=await api('rows',{tab,offset});if(serial!==navSerial||!host.isConnected)return;
-    host.innerHTML='<div class="records-toolbar row"><strong>'+e(titles[tab])+' · '+e(r.total)+' รายการ</strong>'+openLink('เปิดแท็บใน Google Sheet',r.sheetUrl||teacherData.url)+(tab==='Evidence'?openLink('เปิดโฟลเดอร์หลักฐาน',r.folderUrl):'')+'</div>'+
+    const r=await api('rows',{tab,mode,offset});if(serial!==navSerial||!host.isConnected)return;
+    const toolbar='<div class="records-toolbar row"><strong>'+e(titles[tab])+' · '+sn(r.total)+' รายการ</strong>'+openLink('เปิดแท็บใน Google Sheet',r.sheetUrl||teacherData.url)+(tab==='Evidence'?openLink('เปิดโฟลเดอร์หลักฐาน',r.folderUrl):'')+'</div>';
+    if(mode==='summary'){
+      if(r.summary)recordResult=r;
+      host.innerHTML=toolbar+(r.summary?summaryView(tab,r):'<p class="notice">กรุณาอัปเดต Code.gs และเผยแพร่เวอร์ชันใหม่ของ Apps Script เพื่อเปิดสรุปผล ระหว่างนี้ยังดูคำตอบรายรายการได้</p>');
+    }else host.innerHTML=toolbar+
       (r.rows.length?'<div class="record-list">'+r.rows.map(row=>recordCard(tab,r.headers,row)).join('')+'</div>':'<p class="notice">ยังไม่มีข้อมูลในแท็บนี้</p>')+
       '<div class="row records-pages">'+(r.offset>0?btn('ก่อนหน้า','data-page="'+Math.max(0,r.offset-30)+'"',true):'')+(r.rows.length?'<span class="caption">รายการ '+e(r.offset+1)+'–'+e(r.offset+r.rows.length)+' จาก '+e(r.total)+'</span>':'')+(r.offset+r.rows.length<r.total?btn('ถัดไป','data-page="'+(r.offset+r.rows.length)+'"',true):'')+'</div>';
-  }catch(err){if(serial===navSerial&&host.isConnected)host.textContent=err.message;}
+    notice.textContent='';
+  }catch(err){if(serial===navSerial&&host.isConnected)notice.textContent=err.message;}
+  finally{if(serial===navSerial&&host.isConnected)host.setAttribute('aria-busy','false');}
 }
 async function toggleDrivePreview(button){
   const card=button.closest('.evidence-card'),host=card?.querySelector('.drive-preview'),id=button.dataset.imageId,src=drivePreview(button.dataset.preview);
@@ -387,9 +525,15 @@ document.addEventListener('click',async ev=>{
   if(b.dataset.demo){demo=true;const t=b.dataset.demo==='teacher';user={id:t?'TEACHER':'SQ001',role:t?'teacher':'student',group:t?'':'G1',place:t?'':'วัดใหญ่'};await go('home');}
   if(b.dataset.view)await go(b.dataset.view);
   if(b.dataset.recordTab&&Object.prototype.hasOwnProperty.call(titles,b.dataset.recordTab)){recordTab=b.dataset.recordTab;await showRows();}
+  if(['summary','individual'].includes(b.dataset.recordMode)&&recordMode!==b.dataset.recordMode){recordMode=b.dataset.recordMode;await showRows();}
+  if(b.dataset.recordPhase&&recordTab==='Survey'&&recordMode==='summary'&&Object.hasOwn(recordResult?.summary||{},b.dataset.recordPhase)){
+    recordPhase=b.dataset.recordPhase;
+    root.querySelectorAll('[data-record-phase]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.recordPhase===recordPhase)));
+    document.getElementById('record-summary-body').innerHTML=summaryBody('Survey',recordResult);
+  }
   if(b.dataset.page!==undefined)await showRows(Number(b.dataset.page));
   if(b.dataset.preview!==undefined)await toggleDrivePreview(b);
-  if(b.dataset.logout){if(!demo)api('logout').catch(()=>{});++navSerial;user=null;token='';demo=false;recordTab='Survey';teacherData={};landing();}
+  if(b.dataset.logout){if(!demo)api('logout').catch(()=>{});++navSerial;user=null;token='';demo=false;recordTab='Survey';recordMode='summary';recordPhase='pre';recordResult=null;teacherData={};landing();}
 });
 root.addEventListener('submit',async ev=>{
   const f=ev.target;if(f.id==='login')return;ev.preventDefault();if(busy)return;
