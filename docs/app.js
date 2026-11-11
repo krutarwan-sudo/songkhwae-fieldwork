@@ -87,23 +87,28 @@ function landing(){
   loginForm.addEventListener('submit',async ev=>{
     ev.preventDefault();if(busy)return;
     const form=ev.currentTarget,fd=new FormData(form),b=form.querySelector('button');busy=true;b.disabled=true;feedback(form,'กำลังเข้าสู่ระบบ…','ok');
-    try{const result=await api('login',{id:fd.get('id'),password:fd.get('password')});token=result.token;user=result.user;}
+    let overview;
+    try{const result=await api('login',{id:fd.get('id'),password:fd.get('password'),includeHome:true});token=result.token;user=result.user;overview=result.home;}
     catch(err){feedback(form,err.message);b.disabled=false;return;}
     finally{busy=false;}
-    await go('home');
+    await go('home',overview);
   });
 }
 const menusStudent=[['home','ภาพรวม'],['pre','ก่อนเรียน'],['Fieldwork','บันทึกกลุ่ม'],['Evidence','ส่งหลักฐาน'],['Reflection','สะท้อนรายบุคคล'],['post','หลังเรียน']];
 const menusTeacher=[['home','ภาพรวมครู'],['Observation','สังเกตพฤติกรรม'],['Rubric','ประเมินกลุ่ม'],['Evidence','ส่งหลักฐาน'],['InterviewBefore','สัมภาษณ์ก่อน'],['InterviewAfter','สัมภาษณ์หลัง'],['records','ดูข้อมูล'],['controls','ตั้งค่าการเก็บ']];
 const studentDataViews=new Set(['home','pre','post']);
 const teacherDataViews=new Set(['home','Observation','InterviewAfter','controls']);
-async function go(next){
-  if(busy)return;
+async function go(next,initialData){
+  if(busy||!user)return;
   const req=++navSerial,teacher=user.role==='teacher';view=next;
   try{
     if((teacher?teacherDataViews:studentDataViews).has(next)){
-      render('<p class="muted" role="status">กำลังโหลด…</p>',true);
-      const data=await api(teacher?'teacher':'status');
+      const scope=next==='home'||next==='controls'?next:teacher?'roster':'survey';
+      let data=initialData;
+      if(!data){
+        render('<p class="muted" role="status">กำลังโหลด…</p>',true);
+        data=await api(teacher?'teacher':'status',{view:scope});
+      }
       if(req!==navSerial||!user)return;
       if(teacher)teacherData=data;else status=data;
     }
