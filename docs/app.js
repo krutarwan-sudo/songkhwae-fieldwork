@@ -55,7 +55,10 @@ function bridge(){
   const handler=ev=>{
     const m=ev.data;
     if(!/^https:\/\/(?:script\.google\.com|(?:[a-z0-9-]+-)?script\.googleusercontent\.com)$/i.test(ev.origin)||!m||m.channel!=='TWK_BRIDGE_V1'||m.nonce!==nonce)return;
-    if(m.type==='ready'&&!source&&ev.source){source=ev.source;origin=ev.origin;clearTimeout(timer);resolveReady();return;}
+    if(m.type==='ready'&&!source&&ev.source){
+      source=ev.source;origin=ev.origin;send.rpcCheck=m.rpcCheck===true;
+      clearTimeout(timer);resolveReady();return;
+    }
     if(ev.source!==source||ev.origin!==origin||m.type!=='reply'||!pending.has(m.request))return;
     const cb=pending.get(m.request);pending.delete(m.request);clearTimeout(cb.timer);
     if(m.result?.ok===true)cb.res(m.result.data);else cb.rej(Error(m.result?.error||'Google ส่งผลตอบกลับไม่ครบ'));
@@ -73,12 +76,12 @@ function bridge(){
     if(attempt)send.onRetry?.();
   };
   const send=async(action,payload={})=>{const requestToken=token;await ready;return new Promise((res,rej)=>{
-    const request=rand(),message=action==='login'?'เชื่อมต่อ Apps Script แล้ว แต่ยังไม่ได้ผลตรวจรหัส กรุณาลองเข้าสู่ระบบอีกครั้ง':action==='save'?'ยังไม่ได้รับการยืนยัน กรุณากดส่งอีกครั้งโดยใช้ข้อมูลเดิม':'Google ยังไม่ส่งข้อมูลกลับมา กรุณาลองโหลดใหม่';
+    const request=rand(),message=action==='login'?'เชื่อมต่อ Apps Script แล้ว แต่ยังไม่ได้ผลตรวจรหัส กรุณาลองเข้าสู่ระบบอีกครั้ง':action==='ping'?'เปิดช่องเชื่อมต่อได้ แต่ Apps Script ยังไม่ตอบคำขอทดสอบ':action==='save'?'ยังไม่ได้รับการยืนยัน กรุณากดส่งอีกครั้งโดยใช้ข้อมูลเดิม':'Google ยังไม่ส่งข้อมูลกลับมา กรุณาลองโหลดใหม่';
     const timer=setTimeout(()=>{
       pending.delete(request);
       if(action==='login'&&!pending.size)clear();
       rej(Error(message));
-    },action==='login'?30000:50000);
+    },action==='login'||action==='ping'?30000:50000);
     pending.set(request,{res,rej,timer});
     try{source.postMessage({channel:'TWK_BRIDGE_V1',nonce,type:'request',request,action,token:requestToken,payload},origin);}
     catch{pending.delete(request);clearTimeout(timer);rej(Error('ส่งคำขอไป Apps Script ไม่สำเร็จ กรุณารีเฟรชแล้วลองอีกครั้ง'));}
@@ -249,9 +252,12 @@ function landing(){
     <section class="card login-card">
       <div class="login-stamp"><img src="./assets/songkhwae-mark.svg" alt="" width="39" height="39"> ห้องเรียนภาคสนาม</div>
       ${header('เข้าสมุดภาคสนาม','ใช้รหัสบัญชีและรหัสผ่านที่ครูแจกให้')}
-      <form id="login" class="stack">
-        <label class="label">รหัสบัญชี<input name="id" autocomplete="username" placeholder="เช่น SQ001" maxlength="24" required></label>
-        <label class="label">รหัสผ่าน<input type="password" name="password" autocomplete="current-password" required maxlength="100"></label>
+      <form id="login" class="stack" method="post">
+        <label class="label">รหัสบัญชี<input name="id" autocomplete="username" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="เช่น SQ001" maxlength="24" required></label>
+        <div class="stack">
+          <label class="label">รหัสผ่าน<input id="login-password" type="password" name="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required maxlength="100"></label>
+          <button class="btn alt small" type="button" aria-controls="login-password" data-show-password>แสดงรหัสผ่าน</button>
+        </div>
         ${btn('เข้าสู่ระบบ','type="submit"')}
         ${directMode||(usable&&!localPreview)?'<button class="btn alt small" type="button" data-check-connection>ตรวจการเชื่อมต่อ</button>':''}
         <p class="feedback" role="status" aria-live="polite"></p>
@@ -263,6 +269,12 @@ function landing(){
     </section>
   </div>`;
   const loginForm=root.querySelector('#login');
+  const passwordField=loginForm.querySelector('#login-password'),passwordToggle=loginForm.querySelector('[data-show-password]');
+  const setPasswordVisible=visible=>{
+    passwordField.type=visible?'text':'password';
+    passwordToggle.textContent=visible?'ซ่อนรหัสผ่าน':'แสดงรหัสผ่าน';
+  };
+  passwordToggle?.addEventListener('click',()=>setPasswordVisible(passwordField.type==='password'));
   if(usable&&!localPreview)loginForm.addEventListener('focusin',()=>bridge(),{once:true});
   loginForm.querySelector('[data-check-connection]')?.addEventListener('click',async ev=>{
     if(busy)return;
@@ -270,8 +282,18 @@ function landing(){
     feedback(loginForm,'กำลังตรวจการเชื่อมต่อ Apps Script…','ok');
     try{
       const send=await readyToSignIn(loginForm);
-      if(directMode)await send('ping');
-      feedback(loginForm,'เชื่อมต่อ Apps Script ได้แล้ว ลองกดเข้าสู่ระบบเพื่อตรวจรหัส','ok');
+      if(!directMode&&!send.rpcCheck){
+        feedback(loginForm,'เปิดช่องเชื่อมต่อได้ แต่ยังตรวจระบบเข้าสู่ระบบไม่ได้ กรุณาอัปเดต Bridge.html ใน Apps Script','');
+        return;
+      }
+      feedback(loginForm,'กำลังทดสอบว่า Apps Script รับคำขอและเปิดชีตได้…','ok');
+      try{
+        const result=await send('ping');
+        if(result?.ready!==true)throw Error('Apps Script ตอบกลับไม่ครบ');
+      }catch(err){
+        throw Error('ทดสอบระบบรับคำขอไม่ผ่าน: '+err.message);
+      }
+      feedback(loginForm,'Apps Script รับคำขอและเปิดชีตได้แล้ว ลองเข้าสู่ระบบเพื่อตรวจรหัส','ok');
     }
     catch(err){feedback(loginForm,err.message);}
     finally{b.disabled=false;busy=false;}
@@ -279,6 +301,7 @@ function landing(){
   loginForm.addEventListener('submit',async ev=>{
     ev.preventDefault();if(busy)return;
     const form=ev.currentTarget,fd=new FormData(form),b=form.querySelector('[type=submit]');busy=true;b.disabled=true;feedback(form,'กำลังเชื่อมต่อ Apps Script…','ok');
+    if(passwordField&&passwordToggle)setPasswordVisible(false);
     try{
       const send=await readyToSignIn(form);
       feedback(form,'เชื่อมต่อแล้ว กำลังตรวจรหัสบัญชี…','ok');
