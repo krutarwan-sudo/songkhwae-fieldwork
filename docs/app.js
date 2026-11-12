@@ -30,6 +30,8 @@ const configuredUrl=window.TWO_KHWAE_CONFIG?.appsScriptUrl;
 const config=typeof configuredUrl==='string'?configuredUrl.trim():'';
 const usable=/^https:\/\/script\.google\.com\/(?:a\/macros\/[^/]+\/s|macros\/s)\/[A-Za-z0-9_-]+\/exec$/.test(config);
 const localPreview=window.location?.protocol==='file:';
+const directMode=window.TWO_KHWAE_DIRECT===true;
+const bridgeWaitMs=[22000,30000];
 let user=null,token='',demo=false,view='home',status={},teacherData={},toast='',busy=false,transport=null,navSerial=0;
 let motionPaused=false;
 let recordTab='Survey',recordMode='summary',recordPhase='pre',recordResult=null;
@@ -39,13 +41,18 @@ const pOf=g=>places[Math.floor((Number(g.slice(1))-1)/2)]||'';
 const rosterDemo=()=>Array.from({length:39},(_,i)=>({id:'SQ'+String(i+1).padStart(3,'0'),group:'G'+gid(i+1),place:pOf('G'+gid(i+1)),consent:demoConsents['SQ'+String(i+1).padStart(3,'0')]||'granted'}));
 function bridge(){
   if(transport)return transport;
-  let frame,source,origin,resolveReady,rejectReady,handler,timer;
-  const nonce=rand(),pending=new Map();
+  let frame,source,origin,nonce,resolveReady,rejectReady,timer;
+  const pending=new Map();
   const ready=new Promise((res,rej)=>{resolveReady=res;rejectReady=rej;});
   // The login form can open the bridge before any request is waiting on it.
   ready.catch(()=>{});
-  const clear=()=>{clearTimeout(timer);window.removeEventListener('message',handler);frame?.remove();transport=null;};
-  handler=ev=>{
+  const removeFrame=()=>{clearTimeout(timer);frame?.remove();frame=null;};
+  const clear=()=>{
+    removeFrame();window.removeEventListener('message',handler);
+    if(transport===send)transport=null;
+  };
+  const connectionError='ยังเชื่อมต่อ Apps Script ไม่ได้หลังลองใหม่แล้ว กรุณากด “ตรวจการเชื่อมต่อ” อีกครั้ง หากยังไม่ได้ให้แจ้งครูผู้ดูแลเว็บ';
+  const handler=ev=>{
     const m=ev.data;
     if(!/^https:\/\/(?:script\.google\.com|(?:[a-z0-9-]+-)?script\.googleusercontent\.com)$/i.test(ev.origin)||!m||m.channel!=='TWK_BRIDGE_V1'||m.nonce!==nonce)return;
     if(m.type==='ready'&&!source&&ev.source){source=ev.source;origin=ev.origin;clearTimeout(timer);resolveReady();return;}
@@ -53,19 +60,34 @@ function bridge(){
     const cb=pending.get(m.request);pending.delete(m.request);clearTimeout(cb.timer);
     if(m.result?.ok===true)cb.res(m.result.data);else cb.rej(Error(m.result?.error||'Google ส่งผลตอบกลับไม่ครบ'));
   };
-  window.addEventListener('message',handler);
-  frame=document.createElement('iframe');frame.title='ช่องเชื่อม Google Sheets';frame.src=config+'?n='+nonce;
-  timer=setTimeout(()=>{clear();rejectReady(Error('เชื่อมต่อ Apps Script ไม่สำเร็จ ให้ครูตรวจลิงก์ /exec, สิทธิ์ Anyone และ PAGES_ORIGIN'));},18000);
-  document.getElementById('bridge-host').append(frame);
-  transport=async(action,payload={})=>{const requestToken=token;await ready;return new Promise((res,rej)=>{
+  const openAttempt=attempt=>{
+    removeFrame();
+    send.attempt=attempt;
+    nonce=rand();
+    frame=document.createElement('iframe');frame.title='ช่องเชื่อม Google Sheets';frame.src=config+'?n='+nonce;
+    timer=setTimeout(()=>{
+      if(attempt+1<bridgeWaitMs.length)openAttempt(attempt+1);
+      else{clear();rejectReady(Error(connectionError));}
+    },bridgeWaitMs[attempt]);
+    document.getElementById('bridge-host').append(frame);
+    if(attempt)send.onRetry?.();
+  };
+  const send=async(action,payload={})=>{const requestToken=token;await ready;return new Promise((res,rej)=>{
     const request=rand(),message=action==='login'?'เชื่อมต่อ Apps Script แล้ว แต่ยังไม่ได้ผลตรวจรหัส กรุณาลองเข้าสู่ระบบอีกครั้ง':action==='save'?'ยังไม่ได้รับการยืนยัน กรุณากดส่งอีกครั้งโดยใช้ข้อมูลเดิม':'Google ยังไม่ส่งข้อมูลกลับมา กรุณาลองโหลดใหม่';
-    const timer=setTimeout(()=>{pending.delete(request);rej(Error(message));},action==='login'?22000:50000);
+    const timer=setTimeout(()=>{
+      pending.delete(request);
+      if(action==='login'&&!pending.size)clear();
+      rej(Error(message));
+    },action==='login'?30000:50000);
     pending.set(request,{res,rej,timer});
     try{source.postMessage({channel:'TWK_BRIDGE_V1',nonce,type:'request',request,action,token:requestToken,payload},origin);}
     catch{pending.delete(request);clearTimeout(timer);rej(Error('ส่งคำขอไป Apps Script ไม่สำเร็จ กรุณารีเฟรชแล้วลองอีกครั้ง'));}
   });};
-  transport.ready=ready;
-  return transport;
+  send.ready=ready;
+  transport=send;
+  window.addEventListener('message',handler);
+  openAttempt(0);
+  return send;
 }
 // BEGIN RECORD SUMMARY: shared with the local demo.
 const summaryKeys_=(prefix,n)=>Array.from({length:n},(_,i)=>prefix+(prefix==='Q'?String(i+1).padStart(2,'0'):i+1));
@@ -162,11 +184,36 @@ function demoCall(a,d){
   }
   return {};
 }
-async function api(a,d){if(demo)return demoCall(a,d);if(!usable)throw Error('ยังไม่ได้ใส่ URL Apps Script ใน config.js');return bridge()(a,d);}
+function directRpc(action,payload={}){
+  const runner=window.google?.script?.run;
+  if(!runner)return Promise.reject(Error('หน้านี้ต้องเปิดจากลิงก์ Web app ของ Apps Script'));
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>reject(Error(action==='save'?'ยังไม่ได้รับการยืนยัน กรุณากดส่งอีกครั้งโดยใช้ข้อมูลเดิม':'Apps Script ยังไม่ตอบ กรุณาลองใหม่')),action==='login'||action==='ping'?30000:50000);
+    const finish=fn=>value=>{clearTimeout(timer);fn(value);};
+    try{
+      runner.withSuccessHandler(finish(result=>{
+        if(result?.ok===true)resolve(result.data);
+        else reject(Error(result?.error||'Google ส่งผลตอบกลับไม่ครบ'));
+      })).withFailureHandler(finish(()=>reject(Error('Apps Script ติดต่อระบบไม่สำเร็จ ให้เจ้าของเว็บตรวจสิทธิ์ของ Web app'))))
+        .rpc(action,token,payload);
+    }catch(err){clearTimeout(timer);reject(err);}
+  });
+}
+async function api(a,d){if(demo)return demoCall(a,d);return loginBridge()(a,d);}
 function loginBridge(){
+  if(directMode)return directRpc;
   if(localPreview)throw Error('หน้านี้เปิดจากไฟล์ในเครื่อง ให้เปิดลิงก์ GitHub Pages เพื่อเข้าสู่ระบบจริง');
   if(!usable)throw Error('ยังไม่ได้ตั้งค่า URL /exec ใน docs/config.js ให้ใช้ไฟล์ config.js เดิมของเว็บ');
   return bridge();
+}
+async function readyToSignIn(form){
+  const send=loginBridge();
+  if(directMode)return send;
+  const announce=()=>feedback(form,'Apps Script ตอบช้า กำลังเชื่อมต่อใหม่ให้อีกครั้ง…','ok');
+  send.onRetry=announce;
+  if(send.attempt)announce();
+  try{await send.ready;return send;}
+  finally{send.onRetry=null;}
 }
 function btn(label,attr='',alt=false){return '<button class="btn'+(alt?' alt':'')+'" '+(attr.includes('type=')?'':'type="button" ')+attr+'>'+e(label)+'</button>';}
 function options(a){return a.map(x=>'<option value="'+e(x[0])+'">'+e(x[1])+'</option>').join('');}
@@ -206,11 +253,11 @@ function landing(){
         <label class="label">รหัสบัญชี<input name="id" autocomplete="username" placeholder="เช่น SQ001" maxlength="24" required></label>
         <label class="label">รหัสผ่าน<input type="password" name="password" autocomplete="current-password" required maxlength="100"></label>
         ${btn('เข้าสู่ระบบ','type="submit"')}
-        ${usable&&!localPreview?'<button class="btn alt small" type="button" data-check-connection>ตรวจการเชื่อมต่อ</button>':''}
+        ${directMode||(usable&&!localPreview)?'<button class="btn alt small" type="button" data-check-connection>ตรวจการเชื่อมต่อ</button>':''}
         <p class="feedback" role="status" aria-live="polite"></p>
       </form>
       <div class="intro-note">
-        <p class="small muted">${usable?'ทดลองดูหน้าจอก่อนกรอกข้อมูลจริงได้':'ยังไม่ได้ตั้งค่า Apps Script · ทดลองใช้หน้าจอได้โดยไม่เขียนลงชีต'}</p>
+        <p class="small muted">${directMode?'ทางเข้าสำรองผ่าน Apps Script · ใช้รหัสเดิมได้':usable?'ทดลองดูหน้าจอก่อนกรอกข้อมูลจริงได้':'ยังไม่ได้ตั้งค่า Apps Script · ทดลองใช้หน้าจอได้โดยไม่เขียนลงชีต'}</p>
         <div class="row">${btn('ทดลองแบบนักเรียน','data-demo="student"',true)}${btn('ทดลองแบบครู','data-demo="teacher"',true)}</div>
       </div>
     </section>
@@ -221,7 +268,11 @@ function landing(){
     if(busy)return;
     const b=ev.currentTarget;b.disabled=true;busy=true;
     feedback(loginForm,'กำลังตรวจการเชื่อมต่อ Apps Script…','ok');
-    try{await loginBridge().ready;feedback(loginForm,'เชื่อมต่อ Apps Script ได้แล้ว ลองกดเข้าสู่ระบบเพื่อตรวจรหัส','ok');}
+    try{
+      const send=await readyToSignIn(loginForm);
+      if(directMode)await send('ping');
+      feedback(loginForm,'เชื่อมต่อ Apps Script ได้แล้ว ลองกดเข้าสู่ระบบเพื่อตรวจรหัส','ok');
+    }
     catch(err){feedback(loginForm,err.message);}
     finally{b.disabled=false;busy=false;}
   });
@@ -229,7 +280,7 @@ function landing(){
     ev.preventDefault();if(busy)return;
     const form=ev.currentTarget,fd=new FormData(form),b=form.querySelector('[type=submit]');busy=true;b.disabled=true;feedback(form,'กำลังเชื่อมต่อ Apps Script…','ok');
     try{
-      const send=loginBridge();await send.ready;
+      const send=await readyToSignIn(form);
       feedback(form,'เชื่อมต่อแล้ว กำลังตรวจรหัสบัญชี…','ok');
       const result=await send('login',{id:fd.get('id'),password:fd.get('password')});
       if(!result?.token||!result.user)throw Error('Apps Script ตอบกลับไม่ครบ กรุณาลองอีกครั้ง');
